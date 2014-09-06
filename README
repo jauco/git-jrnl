@@ -1,0 +1,15 @@
+You edit some text in note.txt. You jot down stuff that's unresolved with
+
+    - [ ] something that isn't fixed
+
+You save it
+
+you start editing code.
+
+You run a snapshot command. this:
+ - adds the diff to note.txt
+ - creates a new journal snapshot on the <branch>-journal branch
+ - inserts the current date
+ - if this commit resolves `- [ ]` items than a commit gets added that adds the commit id of the fix to those lines
+
+ every now and then you want to create a real commit. Git-jrnl creates a new commit on the non-journal branch and a commit on the journal branch with both the real commit and the journal commit as the parents. In this way you can choose to keep the journal private, or clean it up before pushing.
