@@ -1,0 +1,96 @@
+#!/bin/sh
+# Based on git-stash
+
+GIT_DIR=$(git rev-parse --git-dir)
+TMP="$GIT_DIR/.git-jrnl.$$"
+TMPindex=${GIT_INDEX_FILE-"$GIT_DIR/index"}.jrnl.$$
+trap 'rm -f "$TMP-"* "$TMPindex"' 0
+JOURNAL_TEXT="journal.txt"
+JOURNAL_REF="$GIT_DIR/refs/heads/journal"
+
+create_journal_commit () {
+    stash_msg="$1"
+    
+    START_DIR=`pwd`
+    require_work_tree
+    cd_to_toplevel
+
+    git update-index -q --refresh
+
+    if no_changes
+    then
+        echo "No local changes to save"
+        exit 0
+    fi
+
+    # state of the base commit
+    head=$(git rev-parse --verify HEAD) || die "$(gettext "You do not have the initial commit yet")"
+    journalHead=$(git rev-parse --verify journal)
+
+    # ease of unpacking later.
+    git ls-files -o -z -c -m > "${TMP}-files-to-add"
+    export GIT_INDEX_FILE="$TMPindex"
+    rm -f "$TMPindex"
+    git update-index -z --add --remove --stdin 2> /dev/null <"${TMP}-files-to-add"
+    u_tree=$(git write-tree)
+    u_commit=`echo $stash_msg | git commit-tree $u_tree -p $head -p $journalHead`
+    rm -f "$TMPindex"
+    echo $u_commit > "$JOURNAL_REF"
+
+    cd "$START_DIR"
+    echo "Commit added as ${JOURNAL_REF}, hash: $u_commit"
+}
+
+no_changes () {
+    git diff-index --quiet --cached HEAD --ignore-submodules -- &&
+    git diff-files --quiet --ignore-submodules &&
+    test -z "$(untracked_files)"
+}
+
+untracked_files () {
+    git ls-files -o -z
+}
+
+cd_to_toplevel () {
+    cdup=$(git rev-parse --show-toplevel) &&
+    cd "$cdup" || {
+        echo >&2 "Cannot chdir to $cdup, the toplevel of the working tree"
+        exit 1
+    }
+}
+
+require_work_tree () {
+    test "$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ||
+    die "fatal: $0 cannot be used without a working tree."
+}
+
+die () {
+    die_with_status 1 "$@"
+}
+
+die_with_status () {
+    status=$1
+    shift
+    echo >&2 "$*"
+    exit "$status"
+}
+
+add_git_id_to_resolved_tasks () {
+    commit_text=" (`git rev-parse --short HEAD`)"
+    git diff HEAD^ HEAD \
+      --word-diff=porcelain \
+      -G"^- \[x\]" -- "$JOURNAL_TEXT" |
+    sed -n 's/^@@ -[0-9]\+ +\([0-9]\+\) @@$/\1s|$|'"$commit_text"'|/p' > "$TMP-add_commits.sed"
+    sed -f "$TMP-add_commits.sed" -i "$JOURNAL_TEXT"
+
+    git diff >> "$JOURNAL_TEXT"
+    echo -n "# " >> "$JOURNAL_TEXT"
+    date >> "$JOURNAL_TEXT"
+
+    git add "$JOURNAL_TEXT"
+    git commit -m "<Add references for completed tasks>"
+}
+
+create_journal_commit "$*"
+
+add_git_id_to_resolved_tasks
