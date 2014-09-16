@@ -1,0 +1,114 @@
+#!/bin/sh
+# Based on git-stash
+
+GIT_DIR=$(git rev-parse --git-dir)
+JRNLTMP="$GIT_DIR/.git-jrnl.$$"
+TMPindex=${GIT_INDEX_FILE-"$GIT_DIR/index"}.jrnl.$$
+trap 'rm -f "$JRNLTMP-"* "$TMPindex"' 0
+JOURNAL_FILE="journal.txt"
+JOURNAL_BRANCH="journal"
+JOURNAL_REF="$GIT_DIR/refs/heads/${JOURNAL_BRANCH}"
+
+create_journal_commit () {
+
+    # I want to save _everything_ not just the files that git normally commits
+    # I couldn't find an easy git command to do so, so here's the plumbing
+    START_DIR=$(pwd)
+    require_work_tree
+    cd_to_toplevel
+
+    git update-index -q --refresh
+
+    if no_changes
+    then
+        echo "No local changes to save"
+        exit 0
+    fi
+
+    # state of the base commit
+    head=$(git rev-parse --verify HEAD) || die "You do not have the initial commit yet"
+
+    # Make a list of _all_ files and terminate with NULL characters instead of
+    # line endings (-z). You might want to leave out untracked files (i.e.
+    # others) but I think it's nice for my journal to be able to recreate the
+    # working tree exactly.
+    # will also include ignored files
+    git ls-files --others --cached --modified -z > "${JRNLTMP}-files-to-add"
+
+    #temporarily use another index
+    export GIT_INDEX_FILE="$TMPindex"
+    rm -f "$TMPindex"
+    
+    # add the list of all files to the new clean index, I think remove isn't
+    # needed because the index is empty, but it's in the git-stash script so I
+    # left it in
+    git update-index -z --add --remove --stdin 2> /dev/null <"${JRNLTMP}-files-to-add"
+
+    if [ -e "$JOURNAL_REF" ]; then
+        stash_msg=$(git diff --unified=0 journal -- "$JOURNAL_FILE" | tail -n+6 | grep '^+' | sed 's|^+||')
+        if git merge-base --is-ancestor HEAD journal; then
+            parents="-p $(git rev-parse --verify journal)"
+        else
+            parents="-p $(git rev-parse --verify journal) -p $head"
+        fi
+    else
+        stash_msg=$(cat "$JOURNAL_FILE")
+        parents="-p $head"
+    fi
+ 
+    #create a tree of all files
+    u_tree=$(git write-tree)
+    u_commit=$(echo "$stash_msg" | git commit-tree "$u_tree" $parents)
+    echo "$u_commit" > "$JOURNAL_REF"
+
+    cd "$START_DIR"
+    echo "Commit added on branch '${JOURNAL_BRANCH}'"
+
+    {
+        echo "";
+        printf "%80s\n" "$(date +"%a %b %d %H:%M")";
+        echo "================================================================================";
+    } >> "$JOURNAL_FILE"
+}
+
+################################################################################
+# git helpers, not really specific to the workings of git-jrnl
+################################################################################
+no_changes () {
+    git diff-index --quiet --cached HEAD --ignore-submodules -- &&
+    git diff-files --quiet --ignore-submodules &&
+    test -z "$(untracked_files)"
+}
+
+untracked_files () {
+    git ls-files -o -z
+}
+
+cd_to_toplevel () {
+    cdup=$(git rev-parse --show-toplevel) &&
+    cd "$cdup" || {
+        echo >&2 "Cannot chdir to $cdup, the toplevel of the working tree"
+        exit 1
+    }
+}
+
+require_work_tree () {
+    test "$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ||
+    die "fatal: $0 cannot be used without a working tree."
+}
+
+die () {
+    die_with_status 1 "$@"
+}
+
+die_with_status () {
+    status=$1
+    shift
+    echo >&2 "$*"
+    exit "$status"
+}
+
+################################################################################
+# kick off the script
+################################################################################
+create_journal_commit "$*"

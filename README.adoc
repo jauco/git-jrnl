@@ -1,0 +1,24 @@
+# Git-jrnl
+
+Maintain a journal file in your git project.
+
+## Why?
+
+Often the git log is not for your personal perusal. You can't just jam everyting into your giot commits with vague messages like "stash" or "temp before refactoring frobnicator". However, that is exactly what you want to do while coding. Git-jrnl creates seperate journal commits and by keeping a journal file you can reconstruct what you were thinking. So you can store a snapshot when you are getting uncomfortable with the amount of changes you are making and then later create those nice git commits.
+
+
+You edit some text in note.txt. You jot down stuff that's unresolved with
+
+    - [ ] something that isn't fixed
+
+You save it
+
+you start editing code.
+
+You run a snapshot command. this:
+ - adds the diff to note.txt
+ - creates a new journal snapshot on the <branch>-journal branch
+ - inserts the current date
+ - if this commit resolves `- [ ]` items than a commit gets added that adds the commit id of the fix to those lines
+
+add journal.txt to your gitignore the journal lives outside your main branch
