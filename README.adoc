@@ -16,6 +16,7 @@ You save it
 you start editing code.
 
 You run a snapshot command. this:
+
  - adds the diff to note.txt
  - creates a new journal snapshot on the <branch>-journal branch
  - inserts the current date
